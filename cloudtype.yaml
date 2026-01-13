@@ -1,0 +1,22 @@
+name: crypto-alert-bot
+runtime: python
+version: 3.11
+
+build:
+  commands:
+    - pip install -r requirements.txt
+
+run:
+  command: python alert_coin.py
+
+env:
+  - CHECK_INTERVAL
+  - RSI_PERIOD
+  - RSI_OVERSOLD
+  - RSI_OVERBOUGHT
+  - MIN_VOLUME_USDT
+  - CATEGORY
+  - EXCLUDE_COINS
+  - TELEGRAM_BOT_TOKEN
+  - TELEGRAM_CHAT_ID
+  - SINGLE_SCAN
