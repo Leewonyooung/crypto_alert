@@ -63,17 +63,21 @@ def load_config_from_env() -> Dict:
     }
     
     # 텔레그램 설정
-    telegram_bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
-    telegram_chat_id = os.getenv("TELEGRAM_CHAT_ID")
+    telegram_bot_token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
+    telegram_chat_id = os.getenv("TELEGRAM_CHAT_ID", "").strip()
     
     if telegram_bot_token and telegram_chat_id:
         config["telegram"] = {
             "bot_token": telegram_bot_token,
             "chat_id": telegram_chat_id
         }
-        print(f"✅ 텔레그램 설정 완료 (Chat ID: {telegram_chat_id})")
+        logger.info(f"✅ 텔레그램 설정 완료 (Chat ID: {telegram_chat_id})")
     else:
-        print("⚠️ 텔레그램 설정이 완료되지 않았습니다.")
+        logger.warning("⚠️ 텔레그램 설정이 완료되지 않았습니다.")
+        if not telegram_bot_token:
+            logger.warning("   TELEGRAM_BOT_TOKEN이 설정되지 않았습니다.")
+        if not telegram_chat_id:
+            logger.warning("   TELEGRAM_CHAT_ID가 설정되지 않았습니다.")
     
     return config
 
@@ -540,8 +544,15 @@ class TelegramNotifier:
     def send_message(self, text: str) -> bool:
         """메시지 전송"""
         url = f"{self.base_url}/sendMessage"
+        
+        # Chat ID를 문자열로 변환 (숫자여도 문자열로 전송 가능)
+        chat_id = str(self.chat_id).strip()
+        
+        # 디버깅: Chat ID 로깅 (민감 정보이므로 마스킹)
+        logger.debug(f"텔레그램 메시지 전송 시도 (Chat ID: {chat_id[:5]}...)")
+        
         data = {
-            "chat_id": self.chat_id,
+            "chat_id": chat_id,
             "text": text,
             "parse_mode": "HTML"  # HTML 형식 사용
         }
@@ -551,24 +562,40 @@ class TelegramNotifier:
             result = response.json()
             
             if response.status_code == 200 and result.get("ok"):
+                logger.info("✅ 텔레그램 메시지 전송 성공")
                 return True
             else:
                 error_msg = result.get('description', 'Unknown error')
-                print(f"❌ Telegram API error: {error_msg}")
+                error_code = result.get('error_code', 'N/A')
+                logger.error(f"❌ Telegram API error [{error_code}]: {error_msg}")
+                logger.error(f"   Chat ID: {chat_id}")
+                
+                # "chat not found" 에러인 경우 상세 정보 제공
+                if "chat not found" in error_msg.lower() or error_code == 400:
+                    logger.error("   가능한 원인:")
+                    logger.error("   1. 봇이 그룹에 추가되지 않았습니다")
+                    logger.error("   2. Chat ID가 잘못되었습니다")
+                    logger.error("   3. 그룹이 삭제되었거나 봇이 제거되었습니다")
+                    logger.error("   해결 방법:")
+                    logger.error("   1. 그룹에 봇을 추가하세요")
+                    logger.error("   2. 그룹에서 봇에게 메시지를 보내세요 (예: /start)")
+                    logger.error("   3. 환경변수 TELEGRAM_CHAT_ID를 확인하세요")
+                
                 # HTML 파싱 오류인 경우 일반 텍스트로 재시도
                 if "parse" in error_msg.lower() or "html" in error_msg.lower():
-                    print("   일반 텍스트로 재시도 중...")
+                    logger.info("   일반 텍스트로 재시도 중...")
                     data["parse_mode"] = None
                     response = requests.post(url, data=data, timeout=10)
                     result = response.json()
                     if response.status_code == 200 and result.get("ok"):
+                        logger.info("✅ 텔레그램 메시지 전송 성공 (일반 텍스트)")
                         return True
                 return False
         except requests.exceptions.Timeout:
-            print("❌ Telegram error: 요청 시간 초과")
+            logger.error("❌ Telegram error: 요청 시간 초과")
             return False
         except Exception as e:
-            print(f"❌ Telegram error: {e}")
+            logger.error(f"❌ Telegram error: {e}", exc_info=True)
             return False
 
 
@@ -601,18 +628,31 @@ if __name__ == "__main__":
                 print("   5. 환경변수 TELEGRAM_CHAT_ID에 설정")
                 sys.exit(1)
         
+        # Chat ID 검증 (공백 제거)
+        chat_id = str(chat_id).strip()
+        
+        # Chat ID가 숫자 또는 음수인지 확인
+        try:
+            # 숫자로 변환 가능한지 확인 (음수 포함)
+            test_id = int(chat_id)
+            logger.info(f"Chat ID 검증 완료: {test_id}")
+        except ValueError:
+            logger.warning(f"⚠️ Chat ID가 숫자 형식이 아닙니다: {chat_id}")
+            logger.warning("   Chat ID는 숫자여야 합니다 (예: -1001234567890)")
+        
         telegram_notifier = TelegramNotifier(
             bot_token=bot_token,
             chat_id=chat_id
         )
-        print("✅ 텔레그램 알림이 활성화되었습니다.")
+        logger.info("✅ 텔레그램 알림이 활성화되었습니다.")
         # 연결 테스트
-        print("📡 텔레그램 연결 테스트 중...")
+        logger.info("📡 텔레그램 연결 테스트 중...")
         if telegram_notifier.test_connection():
-            print("✅ 텔레그램 연결 성공! 테스트 메시지를 확인하세요.")
+            logger.info("✅ 텔레그램 연결 성공! 테스트 메시지를 확인하세요.")
         else:
-            print("⚠️ 텔레그램 연결 실패. 봇 토큰과 Chat ID를 확인하세요.")
-            print("   그룹 Chat ID는 보통 음수입니다 (예: -1001234567890)")
+            logger.error("⚠️ 텔레그램 연결 실패. 봇 토큰과 Chat ID를 확인하세요.")
+            logger.error("   그룹 Chat ID는 보통 음수입니다 (예: -1001234567890)")
+            logger.error("   CloudType 환경변수에서 TELEGRAM_CHAT_ID를 확인하세요.")
     
     # 봇 인스턴스 생성
     bot = OversoldAlertBot(config=config, telegram_notifier=telegram_notifier)

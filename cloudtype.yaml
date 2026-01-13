@@ -6,7 +6,7 @@ build:
   commands:
     - pip install -r requirements.txt
 
-run:
+start:
   command: python alert_coin.py
 
 env:

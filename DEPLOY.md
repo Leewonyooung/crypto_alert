@@ -47,9 +47,9 @@ SINGLE_SCAN=false
 
 CloudType은 다음 파일들을 자동으로 인식합니다:
 
-- **Procfile**: `worker: python alert_coin.py`
+- **Procfile**: `web: python alert_coin.py` (또는 `start: python alert_coin.py`)
 - **requirements.txt**: 의존성 패키지 목록
-- **cloudtype.yaml**: CloudType 전용 설정 (선택사항)
+- **cloudtype.yaml**: CloudType 전용 설정 (start 명령어 포함)
 
 ### 4. 배포
 
@@ -80,12 +80,39 @@ CloudType 대시보드의 "로그" 섹션에서:
 2. 로그에서 에러 메시지 확인
 3. `TELEGRAM_BOT_TOKEN`과 `TELEGRAM_CHAT_ID` 확인
 
-### 문제: 알림이 오지 않음
+### 문제: 알림이 오지 않음 / "chat not found" 에러
+
+**에러 메시지:**
+```
+❌ Telegram API error: Bad Request: chat not found
+```
 
 **해결 방법:**
-1. 텔레그램 봇 토큰 확인
-2. Chat ID 확인 (그룹에 봇이 추가되어 있는지)
-3. 봇에게 메시지 전송 권한 확인
+
+1. **봇이 그룹에 추가되어 있는지 확인**
+   - 텔레그램 그룹에 봇이 있는지 확인
+   - 봇이 제거되었다면 다시 추가
+
+2. **그룹에서 봇에게 메시지 전송**
+   - 그룹에서 봇에게 `/start` 또는 아무 메시지나 전송
+   - 봇이 메시지를 받을 수 있는지 확인
+
+3. **Chat ID 확인 및 재설정**
+   - CloudType 환경변수에서 `TELEGRAM_CHAT_ID` 확인
+   - Chat ID에 공백이나 따옴표가 없는지 확인
+   - Chat ID는 숫자여야 함 (예: `-1001234567890`)
+   - 환경변수에 따옴표 없이 입력: `-1001234567890` (❌ `"-1001234567890"`)
+
+4. **Chat ID 재확인 방법**
+   ```
+   https://api.telegram.org/bot<YOUR_BOT_TOKEN>/getUpdates
+   ```
+   - 위 URL에서 최신 메시지의 `chat.id` 확인
+   - CloudType 환경변수에 정확히 입력
+
+5. **봇 권한 확인**
+   - 그룹 관리자인 경우 봇에 관리자 권한 부여
+   - 일반 멤버여도 메시지 전송은 가능
 
 ### 문제: 메모리 부족
 

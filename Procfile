@@ -1,1 +1,1 @@
-worker: python alert_coin.py
+web: python alert_coin.py
