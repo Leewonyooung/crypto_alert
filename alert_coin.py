@@ -59,16 +59,22 @@ def load_config_from_env() -> Dict:
         "category": os.getenv("CATEGORY", "linear"),
     }
 
-    telegram_bot_token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
-    telegram_chat_id = os.getenv("TELEGRAM_CHAT_ID", "").strip()
+    chat_id = os.getenv("TELEGRAM_CHAT_ID", "").strip()
+    chat_id_2 = os.getenv("TELEGRAM_CHAT_ID_2", "").strip() or chat_id
 
-    if telegram_bot_token and telegram_chat_id:
-        config["telegram"] = {
-            "bot_token": telegram_bot_token,
-            "chat_id": telegram_chat_id
-        }
-        logger.info(f"✅ 텔레그램 설정 완료 (Chat ID: {telegram_chat_id})")
-    else:
+    # 봇1: 15분봉 전용
+    token_15 = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
+    if token_15 and chat_id:
+        config["telegram_15"] = {"bot_token": token_15, "chat_id": chat_id}
+        logger.info(f"✅ 텔레그램 봇1 (15분봉) 설정 완료")
+
+    # 봇2: 5분봉 전용
+    token_5 = os.getenv("TELEGRAM_BOT_TOKEN_2", "").strip()
+    if token_5 and chat_id_2:
+        config["telegram_5"] = {"bot_token": token_5, "chat_id": chat_id_2}
+        logger.info(f"✅ 텔레그램 봇2 (5분봉) 설정 완료")
+
+    if "telegram_5" not in config and "telegram_15" not in config:
         logger.warning("⚠️ 텔레그램 설정이 완료되지 않았습니다.")
 
     return config
@@ -144,9 +150,9 @@ class TechnicalIndicators:
 class RSICrossoverBot:
     """RSI 30/70 돌파 알림 봇 (BTC, ETH 전용)"""
 
-    def __init__(self, config: Dict, telegram_notifier: Optional['TelegramNotifier'] = None):
+    def __init__(self, config: Dict, telegram_notifiers: Optional[Dict[str, 'TelegramNotifier']] = None):
         self.config = config
-        self.telegram_notifier = telegram_notifier
+        self.telegram_notifiers = telegram_notifiers or {}  # {"5": notifier, "15": notifier}
         # 알림 중복 방지: (symbol, interval) -> 마지막 알림 시간
         self.alert_history: Dict[str, datetime] = {}
 
@@ -287,11 +293,13 @@ class RSICrossoverBot:
                         msg = self.format_telegram_alert(result)
                         logger.info(msg)
 
-                        if self.telegram_notifier:
-                            if self.telegram_notifier.send_message(msg):
-                                logger.info("✅ 텔레그램 알림 전송 완료")
+                        # 봉별 해당 봇으로 전송 (5분봉→봇2, 15분봉→봇1)
+                        notifier = self.telegram_notifiers.get(result["interval"])
+                        if notifier:
+                            if notifier.send_message(msg):
+                                logger.info(f"✅ 텔레그램 알림 전송 완료 ({result['interval_name']})")
                             else:
-                                logger.error("❌ 텔레그램 알림 전송 실패")
+                                logger.error(f"❌ 텔레그램 알림 전송 실패 ({result['interval_name']})")
 
                     time.sleep(0.2)
                 except Exception as e:
@@ -311,6 +319,9 @@ class RSICrossoverBot:
         print(f"  • RSI 과매수: {self.config['rsi_overbought']} 이상 돌파")
         print(f"  • HMA 200: 상단/하단 돌파")
         print(f"  • 체크 주기: {self.config['check_interval']}초")
+        if self.telegram_notifiers:
+            print(f"  • 5분봉 알림: {'봇2' if '5' in self.telegram_notifiers else '미설정'}")
+            print(f"  • 15분봉 알림: {'봇1' if '15' in self.telegram_notifiers else '미설정'}")
         print("=" * 60)
 
         if single_scan:
@@ -386,28 +397,33 @@ class TelegramNotifier:
 if __name__ == "__main__":
     config = load_config_from_env()
 
-    telegram_notifier = None
-    if "telegram" in config:
-        bot_token = config["telegram"]["bot_token"]
-        chat_id = config["telegram"]["chat_id"]
+    telegram_notifiers: Dict[str, TelegramNotifier] = {}
 
-        if not chat_id or chat_id.lower() == "auto":
-            print("🔍 그룹 Chat ID 자동 검색 중...")
+    for key, interval in [("telegram_5", "5"), ("telegram_15", "15")]:
+        if key not in config:
+            continue
+        cfg = config[key]
+        bot_token = cfg["bot_token"]
+        chat_id = cfg["chat_id"]
+
+        if not chat_id or str(chat_id).lower() == "auto":
+            print(f"🔍 {interval}분봉 봇 Chat ID 자동 검색 중...")
             found = TelegramNotifier.get_chat_id(bot_token)
             if found:
                 chat_id = found
                 print(f"✅ Chat ID: {chat_id}")
             else:
-                print("❌ Chat ID를 찾을 수 없습니다. 그룹에 봇 추가 후 메시지를 보내세요.")
-                sys.exit(1)
+                print(f"❌ {interval}분봉 봇 Chat ID를 찾을 수 없습니다.")
+                continue
 
-        telegram_notifier = TelegramNotifier(bot_token=bot_token, chat_id=chat_id)
-        if telegram_notifier.test_connection():
-            logger.info("✅ 텔레그램 연결 성공!")
+        notifier = TelegramNotifier(bot_token=bot_token, chat_id=chat_id)
+        if notifier.test_connection():
+            telegram_notifiers[interval] = notifier
+            logger.info(f"✅ {interval}분봉 텔레그램 봇 연결 성공!")
         else:
-            logger.error("⚠️ 텔레그램 연결 실패. 토큰과 Chat ID를 확인하세요.")
+            logger.error(f"⚠️ {interval}분봉 텔레그램 봇 연결 실패.")
 
-    bot = RSICrossoverBot(config=config, telegram_notifier=telegram_notifier)
+    bot = RSICrossoverBot(config=config, telegram_notifiers=telegram_notifiers)
     single_scan = os.getenv("SINGLE_SCAN", "false").lower() == "true"
 
     if single_scan:

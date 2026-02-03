@@ -75,8 +75,12 @@ RSI_OVERBOUGHT=70
 CATEGORY=linear
 
 # 텔레그램 (필수)
+# 봇1: 15분봉 알림
 TELEGRAM_BOT_TOKEN=1234567890:ABCdefGHIjklMNOpqrsTUVwxyz
+# 봇2: 5분봉 알림 (선택)
+TELEGRAM_BOT_TOKEN_2=1234567890:ABCdefGHIjklMNOpqrsTUVwxyz2
 TELEGRAM_CHAT_ID=-1001234567890
+# TELEGRAM_CHAT_ID_2=  # 봇2용 별도 그룹 (미설정 시 TELEGRAM_CHAT_ID 사용)
 
 # 단일 스캔만 실행 (true/false)
 SINGLE_SCAN=false
@@ -90,8 +94,9 @@ SINGLE_SCAN=false
 python alert_coin.py
 ```
 
-- 시작 시 "🤖 BTC/ETH RSI 알림 봇이 시작되었습니다!" 메시지가 그룹에 오면 설정이 정상입니다.
-- BTC 또는 ETH의 5분봉/15분봉에서 RSI가 30 이하 또는 70 이상으로 돌파할 때마다 그룹으로 알림이 전송됩니다.
+- 시작 시 각 봇에서 테스트 메시지가 오면 설정이 정상입니다.
+- **5분봉** 신호 → 봇2 (`TELEGRAM_BOT_TOKEN_2`)로 전송
+- **15분봉** 신호 → 봇1 (`TELEGRAM_BOT_TOKEN`)로 전송
 
 ---
 
@@ -106,6 +111,8 @@ python alert_coin.py
 - 봇에게 `/start`를 보낸 뒤, `getUpdates` URL로 접속해 `"chat":{"id":123456789}` 형태의 `id`를 확인합니다.  
 - 개인 Chat ID는 양수입니다.
 
-**Q: 여러 그룹에 보내고 싶어요**  
-- 현재 코드는 하나의 Chat ID만 지원합니다.  
-- 여러 그룹에 보내려면 `TELEGRAM_CHAT_ID`에 여러 ID를 쉼표로 구분해 넣고, 코드에서 split 후 반복 전송하도록 수정해야 합니다.
+**Q: 5분봉/15분봉을 다른 봇으로 보내고 싶어요**  
+- `TELEGRAM_BOT_TOKEN` = 15분봉용 봇1  
+- `TELEGRAM_BOT_TOKEN_2` = 5분봉용 봇2  
+- 두 봇 모두 같은 그룹에 추가하면 `TELEGRAM_CHAT_ID` 하나로 동작합니다.  
+- 봇2를 다른 그룹에 보내려면 `TELEGRAM_CHAT_ID_2`를 설정하세요.
