@@ -159,15 +159,14 @@ class RSICrossoverBot:
 
     def analyze_symbol_interval(self, symbol: str, interval: str, interval_name: str) -> Optional[Dict]:
         """
-        RSI + HMA 200 돌파 감지
-        - RSI: 30 이하 과매도, 70 이상 과매수
-        - HMA 200: 가격 상단 돌파(상승), 하단 돌파(하락)
+        RSI + HMA 200 돌파 감지 (종가 마감 기준)
+        - 마지막 캔들(진행 중) 제외, 완전히 마감된 캔들만 사용
+        - latest = 마지막 마감 캔들, prev = 그 이전 마감 캔들
         """
         category = self.config['category']
-        # HMA 200 계산을 위해 250개 캔들 필요
         df = BybitAPI.get_kline(symbol, interval=interval, limit=250, category=category)
 
-        if df.empty or len(df) < 210:  # RSI 14 + HMA 200 여유
+        if df.empty or len(df) < 211:  # 마감 캔들 2개 + RSI/HMA 계산용
             return None
 
         df['rsi'] = TechnicalIndicators.calculate_rsi(
@@ -175,8 +174,9 @@ class RSICrossoverBot:
         )
         df['hma_200'] = TechnicalIndicators.calculate_hma(df['close'], period=200)
 
-        latest = df.iloc[-1]
-        prev = df.iloc[-2]
+        # 종가 마감 기준: 진행 중 캔들(df.iloc[-1]) 제외, 마감된 캔들만 사용
+        latest = df.iloc[-2]   # 마지막 마감 캔들
+        prev = df.iloc[-3]     # 그 이전 마감 캔들
         rsi_now = latest['rsi']
         rsi_prev = prev['rsi']
         price_now = latest['close']
