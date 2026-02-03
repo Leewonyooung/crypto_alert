@@ -34,8 +34,18 @@ MIN_VOLUME_USDT=1000000
 CATEGORY=linear
 EXCLUDE_COINS=USDC,USDT,DAI,TUSD
 TELEGRAM_BOT_TOKEN=your_bot_token_here
+TELEGRAM_BOT_TOKEN_2=your_5min_bot_token_here
 TELEGRAM_CHAT_ID=your_chat_id_here
 ```
+
+#### 5분봉/15분봉 분리 알림 (선택)
+
+```env
+TELEGRAM_BOT_TOKEN_2=your_5min_bot_token_here
+```
+- 봇1(TELEGRAM_BOT_TOKEN): 15분봉 알림
+- 봇2(TELEGRAM_BOT_TOKEN_2): 5분봉 알림
+- **TELEGRAM_BOT_TOKEN_2 미설정 시 5분봉 알림 비활성화됨**
 
 #### 선택 환경변수
 
