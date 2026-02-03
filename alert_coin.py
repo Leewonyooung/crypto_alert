@@ -208,13 +208,13 @@ class RSICrossoverBot:
 
         # HMA 200 상단 돌파 (가격이 HMA 위로 돌파)
         if price_prev <= hma_prev and price_now > hma_now:
-            signals.append(f"HMA 200 상단 돌파 - 가격이 HMA 위로 이탈")
+            signals.append(f"HMA 200 상단 돌파 마감")
             if not signal_type:
                 signal_type = "hma_above"
 
         # HMA 200 하단 돌파 (가격이 HMA 아래로 이탈)
         if price_prev >= hma_prev and price_now < hma_now:
-            signals.append(f"HMA 200 하단 돌파 - 가격이 HMA 아래로 이탈")
+            signals.append(f"HMA 200 하단 돌파 마감")
             if not signal_type:
                 signal_type = "hma_below"
 
