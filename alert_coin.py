@@ -1,13 +1,15 @@
 """
-비트코인/이더리움 RSI 과매도·과매수 돌파 알림 봇 (Bybit)
+비트코인/이더리움 RSI·HMA 200 돌파 알림 봇 (Bybit)
 - 5분봉, 15분봉 기준
 - RSI 30 이하 돌파 → 과매도 구간 알림
 - RSI 70 이상 돌파 → 과매수 구간 알림
+- HMA 200일선 상단/하단 돌파 → 추세 전환 알림
 - 텔레그램으로 실시간 알림 전송
 """
 
 import requests
 import pandas as pd
+import numpy as np
 import time
 import os
 import sys
@@ -120,6 +122,24 @@ class TechnicalIndicators:
         rs = avg_gain / avg_loss
         return 100 - (100 / (1 + rs))
 
+    @staticmethod
+    def calculate_wma(prices: pd.Series, period: int) -> pd.Series:
+        """WMA (Weighted Moving Average) 계산"""
+        weights = np.arange(1, period + 1, dtype=float)
+        return prices.rolling(window=period).apply(
+            lambda x: np.dot(x, weights) / weights.sum(), raw=True
+        )
+
+    @staticmethod
+    def calculate_hma(prices: pd.Series, period: int = 200) -> pd.Series:
+        """HMA (Hull Moving Average) 계산 - HMA = WMA(2*WMA(n/2) - WMA(n), sqrt(n))"""
+        half_period = period // 2
+        sqrt_period = int(round(np.sqrt(period)))
+        wma_half = TechnicalIndicators.calculate_wma(prices, half_period)
+        wma_full = TechnicalIndicators.calculate_wma(prices, period)
+        raw_hma = 2 * wma_half - wma_full
+        return TechnicalIndicators.calculate_wma(raw_hma, sqrt_period)
+
 
 class RSICrossoverBot:
     """RSI 30/70 돌파 알림 봇 (BTC, ETH 전용)"""
@@ -135,27 +155,32 @@ class RSICrossoverBot:
 
     def analyze_symbol_interval(self, symbol: str, interval: str, interval_name: str) -> Optional[Dict]:
         """
-        RSI 돌파 감지: 이전 캔들 대비 RSI가 30 이하 또는 70 이상으로 돌파했는지 확인
-        - 과매도 돌파: 이전 RSI > 30, 현재 RSI <= 30
-        - 과매수 돌파: 이전 RSI < 70, 현재 RSI >= 70
+        RSI + HMA 200 돌파 감지
+        - RSI: 30 이하 과매도, 70 이상 과매수
+        - HMA 200: 가격 상단 돌파(상승), 하단 돌파(하락)
         """
         category = self.config['category']
-        df = BybitAPI.get_kline(symbol, interval=interval, limit=50, category=category)
+        # HMA 200 계산을 위해 250개 캔들 필요
+        df = BybitAPI.get_kline(symbol, interval=interval, limit=250, category=category)
 
-        if df.empty or len(df) < self.config['rsi_period'] + 1:
+        if df.empty or len(df) < 210:  # RSI 14 + HMA 200 여유
             return None
 
         df['rsi'] = TechnicalIndicators.calculate_rsi(
             df['close'], period=self.config['rsi_period']
         )
+        df['hma_200'] = TechnicalIndicators.calculate_hma(df['close'], period=200)
 
         latest = df.iloc[-1]
         prev = df.iloc[-2]
         rsi_now = latest['rsi']
         rsi_prev = prev['rsi']
+        price_now = latest['close']
+        price_prev = prev['close']
+        hma_now = latest['hma_200']
+        hma_prev = prev['hma_200']
 
-        # NaN 체크
-        if pd.isna(rsi_now) or pd.isna(rsi_prev):
+        if pd.isna(rsi_now) or pd.isna(rsi_prev) or pd.isna(hma_now) or pd.isna(hma_prev):
             return None
 
         signals = []
@@ -171,23 +196,37 @@ class RSICrossoverBot:
             signals.append(f"RSI 70 이상 돌파 (과매수) - {rsi_prev:.1f} → {rsi_now:.1f}")
             signal_type = "overbought"
 
+        # HMA 200 상단 돌파 (가격이 HMA 위로 돌파)
+        if price_prev <= hma_prev and price_now > hma_now:
+            signals.append(f"HMA 200 상단 돌파 - 가격이 HMA 위로 이탈")
+            if not signal_type:
+                signal_type = "hma_above"
+
+        # HMA 200 하단 돌파 (가격이 HMA 아래로 이탈)
+        if price_prev >= hma_prev and price_now < hma_now:
+            signals.append(f"HMA 200 하단 돌파 - 가격이 HMA 아래로 이탈")
+            if not signal_type:
+                signal_type = "hma_below"
+
         if not signals:
             return None
 
-        change_rate = ((latest['close'] - prev['close']) / prev['close']) * 100 if prev['close'] > 0 else 0
+        # HMA 200 대비 상단/하단
+        hma_position = "상단" if price_now > hma_now else "하단"
 
         return {
             'symbol': symbol,
             'base_coin': symbol.replace("USDT", ""),
             'interval': interval,
             'interval_name': interval_name,
-            'price': latest['close'],
+            'price': price_now,
             'rsi': rsi_now,
             'rsi_prev': rsi_prev,
+            'hma_200': hma_now,
+            'hma_position': hma_position,
             'signals': signals,
             'signal_type': signal_type,
             'datetime': latest['timestamp'],
-            'change_rate': change_rate,
         }
 
     def check_alert_cooldown(self, symbol: str, interval: str, cooldown_minutes: int = 30) -> bool:
@@ -199,25 +238,28 @@ class RSICrossoverBot:
         return elapsed >= cooldown_minutes
 
     def format_telegram_alert(self, result: Dict) -> str:
-        """텔레그램용 알림 메시지"""
+        """텔레그램용 알림 메시지 (변화율 제외, RSI·HMA 200 상단/하단 포함)"""
         signal_type = result.get('signal_type', 'unknown')
-        change_emoji = "📈" if result['change_rate'] >= 0 else "📉"
 
         if signal_type == 'oversold':
             title = f"🔻 <b>과매도 돌파: {result['base_coin']} ({result['interval_name']})</b>"
         elif signal_type == 'overbought':
             title = f"🔺 <b>과매수 돌파: {result['base_coin']} ({result['interval_name']})</b>"
+        elif signal_type == 'hma_above':
+            title = f"📈 <b>HMA 200 상단 돌파: {result['base_coin']} ({result['interval_name']})</b>"
+        elif signal_type == 'hma_below':
+            title = f"📉 <b>HMA 200 하단 돌파: {result['base_coin']} ({result['interval_name']})</b>"
         else:
-            title = f"🚨 <b>RSI 신호: {result['base_coin']} ({result['interval_name']})</b>"
+            title = f"🚨 <b>신호 감지: {result['base_coin']} ({result['interval_name']})</b>"
 
         lines = [
             title,
             "",
             f"⏰ 시간: <code>{result['datetime']}</code>",
             f"💰 현재가: <code>{result['price']:.2f} USDT</code>",
-            f"{change_emoji} 변화율: <code>{result['change_rate']:+.2f}%</code>",
             "",
             f"📊 RSI: <code>{result['rsi_prev']:.1f} → {result['rsi']:.1f}</code>",
+            f"📐 HMA 200 대비: <b>{result['hma_position']}</b> (HMA: <code>{result['hma_200']:.2f}</code>)",
             "",
             "<b>감지된 신호:</b>",
         ]
@@ -256,13 +298,14 @@ class RSICrossoverBot:
     def run(self, single_scan: bool = False):
         """봇 실행"""
         print("=" * 60)
-        print("🤖 BTC/ETH RSI 과매도·과매수 돌파 알림 봇")
+        print("🤖 BTC/ETH RSI·HMA 200 돌파 알림 봇")
         print("=" * 60)
         print("설정:")
         print(f"  • 대상: {', '.join(TARGET_SYMBOLS)}")
         print(f"  • 타임프레임: 5분봉, 15분봉")
         print(f"  • RSI 과매도: {self.config['rsi_oversold']} 이하 돌파")
         print(f"  • RSI 과매수: {self.config['rsi_overbought']} 이상 돌파")
+        print(f"  • HMA 200: 상단/하단 돌파")
         print(f"  • 체크 주기: {self.config['check_interval']}초")
         print("=" * 60)
 
