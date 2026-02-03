@@ -150,8 +150,12 @@ class RSICrossoverBot:
         # 알림 중복 방지: (symbol, interval) -> 마지막 알림 시간
         self.alert_history: Dict[str, datetime] = {}
 
-    def _alert_key(self, symbol: str, interval: str) -> str:
-        return f"{symbol}_{interval}"
+    def _alert_key(self, symbol: str, interval: str, signal_type: Optional[str] = None) -> str:
+        """신호 타입별로 쿨다운 분리 (하방→상방 연속 돌파 시 둘 다 알림)"""
+        base = f"{symbol}_{interval}"
+        if signal_type:
+            return f"{base}_{signal_type}"
+        return base
 
     def analyze_symbol_interval(self, symbol: str, interval: str, interval_name: str) -> Optional[Dict]:
         """
@@ -229,9 +233,9 @@ class RSICrossoverBot:
             'datetime': latest['timestamp'],
         }
 
-    def check_alert_cooldown(self, symbol: str, interval: str, cooldown_minutes: int = 30) -> bool:
-        """알림 쿨다운 (같은 심볼·같은 봉에서 중복 방지)"""
-        key = self._alert_key(symbol, interval)
+    def check_alert_cooldown(self, symbol: str, interval: str, signal_type: str, cooldown_minutes: int = 15) -> bool:
+        """알림 쿨다운 (신호 타입별로 분리 - 하방/상방 연속 돌파 시 둘 다 알림)"""
+        key = self._alert_key(symbol, interval, signal_type)
         if key not in self.alert_history:
             return True
         elapsed = (datetime.now() - self.alert_history[key]).total_seconds() / 60
@@ -276,9 +280,9 @@ class RSICrossoverBot:
             for interval, interval_name in TARGET_INTERVALS:
                 try:
                     result = self.analyze_symbol_interval(symbol, interval, interval_name)
-                    if result and self.check_alert_cooldown(symbol, interval):
+                    if result and self.check_alert_cooldown(symbol, interval, result['signal_type']):
                         alerts.append(result)
-                        self.alert_history[self._alert_key(symbol, interval)] = datetime.now()
+                        self.alert_history[self._alert_key(symbol, interval, result['signal_type'])] = datetime.now()
 
                         msg = self.format_telegram_alert(result)
                         logger.info(msg)
