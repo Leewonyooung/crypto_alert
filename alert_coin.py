@@ -300,6 +300,8 @@ class RSICrossoverBot:
                                 logger.info(f"✅ 텔레그램 알림 전송 완료 ({result['interval_name']})")
                             else:
                                 logger.error(f"❌ 텔레그램 알림 전송 실패 ({result['interval_name']})")
+                        else:
+                            logger.warning(f"⚠️ {result['interval_name']} 봇 미연결 - 알림 전송 불가")
 
                     time.sleep(0.2)
                 except Exception as e:
@@ -346,10 +348,11 @@ class RSICrossoverBot:
 class TelegramNotifier:
     """텔레그램 알림 클래스"""
 
-    def __init__(self, bot_token: str, chat_id: str):
+    def __init__(self, bot_token: str, chat_id: str, label: str = ""):
         self.bot_token = bot_token
         self.chat_id = str(chat_id).strip()
         self.base_url = f"https://api.telegram.org/bot{bot_token}"
+        self.label = label or "알림"
 
     @staticmethod
     def get_chat_id(bot_token: str) -> Optional[str]:
@@ -373,7 +376,8 @@ class TelegramNotifier:
         return None
 
     def test_connection(self) -> bool:
-        return self.send_message("🤖 BTC/ETH RSI 알림 봇이 시작되었습니다!")
+        msg = f"🤖 {self.label} 알림 봇이 시작되었습니다!"
+        return self.send_message(msg)
 
     def send_message(self, text: str) -> bool:
         url = f"{self.base_url}/sendMessage"
@@ -383,14 +387,20 @@ class TelegramNotifier:
             result = response.json()
             if response.status_code == 200 and result.get("ok"):
                 return True
-            logger.error(f"Telegram API error: {result.get('description', 'Unknown')}")
-            if "parse" in str(result.get("description", "")).lower():
+            err_desc = result.get("description", "Unknown")
+            err_code = result.get("error_code", "")
+            logger.error(f"[{self.label}] Telegram API 오류 [{err_code}]: {err_desc}")
+            print(f"❌ [{self.label}] 전송 실패: {err_desc}")
+            if "chat not found" in str(err_desc).lower() or "bot was blocked" in str(err_desc).lower():
+                print(f"   → 그룹에 '{self.label}' 봇을 추가하고, 봇에게 /start 를 보내세요.")
+            if "parse" in str(err_desc).lower():
                 data["parse_mode"] = None
                 response = requests.post(url, data=data, timeout=10)
                 return response.status_code == 200 and response.json().get("ok")
             return False
         except Exception as e:
-            logger.error(f"Telegram error: {e}")
+            logger.error(f"[{self.label}] Telegram error: {e}")
+            print(f"❌ [{self.label}] 전송 오류: {e}")
             return False
 
 
@@ -416,12 +426,18 @@ if __name__ == "__main__":
                 print(f"❌ {interval}분봉 봇 Chat ID를 찾을 수 없습니다.")
                 continue
 
-        notifier = TelegramNotifier(bot_token=bot_token, chat_id=chat_id)
+        label = "5분봉" if interval == "5" else "15분봉"
+        notifier = TelegramNotifier(bot_token=bot_token, chat_id=chat_id, label=label)
         if notifier.test_connection():
             telegram_notifiers[interval] = notifier
             logger.info(f"✅ {interval}분봉 텔레그램 봇 연결 성공!")
         else:
             logger.error(f"⚠️ {interval}분봉 텔레그램 봇 연결 실패.")
+            print(f"\n⚠️ {interval}분봉 봇이 그룹에 메시지를 보내지 못했습니다.")
+            print(f"   해결: 1) 그룹에 봇 추가  2) 봇에게 /start 전송  3) 봇 토큰 확인\n")
+
+    if "5" not in telegram_notifiers:
+        print("⚠️ 5분봉 알림이 비활성화됨 (봇 연결 실패). 위 오류를 확인하세요.\n")
 
     bot = RSICrossoverBot(config=config, telegram_notifiers=telegram_notifiers)
     single_scan = os.getenv("SINGLE_SCAN", "false").lower() == "true"
