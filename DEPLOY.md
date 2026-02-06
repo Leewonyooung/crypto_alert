@@ -1,6 +1,6 @@
 # CloudType 배포 가이드
 
-이 문서는 CloudType을 통해 알트코인 과매도/과매수 알림 봇을 배포하는 방법을 설명합니다.
+이 문서는 CloudType을 통해 **비트코인/이더리움 RSI·HMA 200 돌파 알림 봇**을 배포하는 방법을 설명합니다.
 
 ## 📋 사전 준비
 
@@ -26,31 +26,32 @@ CloudType 대시보드의 "환경변수" 섹션에서 다음 변수들을 설정
 #### 필수 환경변수
 
 ```env
-CHECK_INTERVAL=120
+CHECK_INTERVAL=60
 RSI_PERIOD=14
-RSI_OVERSOLD=33
-RSI_OVERBOUGHT=73
-MIN_VOLUME_USDT=1000000
+RSI_OVERSOLD=30
+RSI_OVERBOUGHT=70
 CATEGORY=linear
-EXCLUDE_COINS=USDC,USDT,DAI,TUSD
 TELEGRAM_BOT_TOKEN=your_bot_token_here
-TELEGRAM_BOT_TOKEN_2=your_5min_bot_token_here
 TELEGRAM_CHAT_ID=your_chat_id_here
 ```
 
 #### 5분봉/15분봉 분리 알림 (선택)
 
 ```env
+TELEGRAM_BOT_TOKEN=your_15min_bot_token_here
 TELEGRAM_BOT_TOKEN_2=your_5min_bot_token_here
+TELEGRAM_CHAT_ID=-1001234567890
+TELEGRAM_CHAT_ID_2=  # 봇2용 별도 그룹 (미설정 시 TELEGRAM_CHAT_ID 사용)
 ```
-- 봇1(TELEGRAM_BOT_TOKEN): 15분봉 알림
-- 봇2(TELEGRAM_BOT_TOKEN_2): 5분봉 알림
-- **TELEGRAM_BOT_TOKEN_2 미설정 시 5분봉 알림 비활성화됨**
+
+- **봇1** (`TELEGRAM_BOT_TOKEN`): 15분봉 알림
+- **봇2** (`TELEGRAM_BOT_TOKEN_2`): 5분봉 알림
+- **TELEGRAM_BOT_TOKEN_2 미설정 시** 5분봉 알림 비활성화됨
 
 #### 선택 환경변수
 
 ```env
-SINGLE_SCAN=false
+SINGLE_SCAN=false   # true: 1회 스캔 후 종료
 ```
 
 ### 3. 빌드 및 실행 설정
@@ -128,8 +129,7 @@ CloudType 대시보드의 "로그" 섹션에서:
 
 **해결 방법:**
 1. CloudType에서 더 높은 플랜으로 업그레이드
-2. `CHECK_INTERVAL`을 늘려서 스캔 빈도 감소
-3. `MIN_VOLUME_USDT`를 높여서 스캔할 코인 수 감소
+2. `CHECK_INTERVAL`을 늘려서 스캔 빈도 감소 (예: 120초)
 
 ## 🔄 업데이트
 
@@ -150,8 +150,8 @@ CloudType 대시보드의 "로그" 섹션에서:
    - 에러 발생 시 로그를 확인하여 문제 해결
 
 3. **성능 최적화**
-   - `CHECK_INTERVAL`을 적절히 설정 (너무 짧으면 API 제한 발생 가능)
-   - `MIN_VOLUME_USDT`로 유동성 있는 코인만 스캔
+   - `CHECK_INTERVAL`을 적절히 설정 (5분봉/15분봉 기준 60초 권장)
+   - 너무 짧으면 API 제한 발생 가능
 
 4. **비용 관리**
    - CloudType의 무료 플랜으로도 충분히 작동 가능

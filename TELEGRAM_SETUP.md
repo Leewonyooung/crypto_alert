@@ -1,5 +1,9 @@
 # 텔레그램 봇 생성 및 그룹(방) 메시지 전송 가이드
 
+비트코인/이더리움 RSI·HMA 200 돌파 알림 봇에서 사용하는 텔레그램 설정 방법입니다.
+
+---
+
 ## 1. 새 텔레그램 봇 생성하기
 
 ### 1단계: BotFather에게 연락
@@ -19,6 +23,10 @@
 ```
 TELEGRAM_BOT_TOKEN=여기에_발급받은_토큰_붙여넣기
 ```
+
+### 5분봉/15분봉 분리 알림 시
+- **봇1** (15분봉): `TELEGRAM_BOT_TOKEN`
+- **봇2** (5분봉): `TELEGRAM_BOT_TOKEN_2` (별도 봇 생성 후 토큰 입력)
 
 ---
 
@@ -45,7 +53,14 @@ TELEGRAM_BOT_TOKEN=여기에_발급받은_토큰_붙여넣기
 TELEGRAM_CHAT_ID=auto
 ```
 
-**방법 B: 수동 조회**
+**방법 B: get_chat_id.py 스크립트 사용**
+```bash
+python get_chat_id.py
+```
+- 그룹에서 봇에게 `/start` 보낸 후 실행
+- 출력된 Chat ID를 `.env`에 복사
+
+**방법 C: 수동 조회**
 1. 브라우저에서 아래 URL 접속 (토큰 부분을 본인 토큰으로 교체):
    ```
    https://api.telegram.org/bot<여기에_봇_토큰>/getUpdates
@@ -60,31 +75,31 @@ TELEGRAM_CHAT_ID=-1003642012390
 
 ---
 
-## 3. .env 설정 예시
+## 3. 설정 방법 (둘 중 하나 선택)
+
+### 방법 A: alert_coin.py에서 직접 설정 (한 곳에서 모두 설정)
+
+`alert_coin.py`를 열고 `if __name__ == "__main__":` 아래 설정 블록에서 다음을 채우세요:
+
+```python
+TELEGRAM_BOT_TOKEN = "1234567890:ABCdefGHIjklMNOpqrsTUVwxyz"   # 봇1: 15분봉
+TELEGRAM_BOT_TOKEN_2 = "1234567890:ABCdefGHIjklMNOpqrsTUVwxyz2"  # 봇2: 5분봉 (선택)
+TELEGRAM_CHAT_ID = "-1001234567890"   # 또는 "auto" (자동 조회)
+TELEGRAM_CHAT_ID_2 = ""               # 봇2용 별도 그룹 (비워두면 TELEGRAM_CHAT_ID 사용)
+SINGLE_SCAN = False                   # True: 1회 스캔 후 종료
+```
+
+### 방법 B: .env 파일 사용 (배포 시 권장 - 토큰을 Git에 올리지 않음)
 
 ```env
-# 체크 주기 (초) - 5분봉/15분봉이므로 60초 권장
-CHECK_INTERVAL=60
-
-# RSI 설정
-RSI_PERIOD=14
-RSI_OVERSOLD=30
-RSI_OVERBOUGHT=70
-
-# 거래소 (linear = USDT 무기한 선물)
-CATEGORY=linear
-
-# 텔레그램 (필수)
-# 봇1: 15분봉 알림
 TELEGRAM_BOT_TOKEN=1234567890:ABCdefGHIjklMNOpqrsTUVwxyz
-# 봇2: 5분봉 알림 (선택)
 TELEGRAM_BOT_TOKEN_2=1234567890:ABCdefGHIjklMNOpqrsTUVwxyz2
 TELEGRAM_CHAT_ID=-1001234567890
-# TELEGRAM_CHAT_ID_2=  # 봇2용 별도 그룹 (미설정 시 TELEGRAM_CHAT_ID 사용)
-
-# 단일 스캔만 실행 (true/false)
+TELEGRAM_CHAT_ID_2=
 SINGLE_SCAN=false
 ```
+
+> .env에 설정하면 alert_coin.py의 기본값을 덮어씁니다.
 
 ---
 
@@ -100,19 +115,13 @@ python alert_coin.py
 
 ---
 
-## 5. 자주 묻는 질문
+## 5. 알림 종류
 
-**Q: "chat not found" 오류가 나요**  
-- 봇이 그룹에 추가되었는지 확인하세요.  
-- 그룹에서 봇에게 `/start` 또는 메시지를 한 번 보냈는지 확인하세요.  
-- Chat ID가 음수인지, 숫자만 들어갔는지 확인하세요.
+이 봇은 다음 신호를 감지하여 알림을 보냅니다:
 
-**Q: 개인 채팅으로 보내고 싶어요**  
-- 봇에게 `/start`를 보낸 뒤, `getUpdates` URL로 접속해 `"chat":{"id":123456789}` 형태의 `id`를 확인합니다.  
-- 개인 Chat ID는 양수입니다.
-
-**Q: 5분봉/15분봉을 다른 봇으로 보내고 싶어요**  
-- `TELEGRAM_BOT_TOKEN` = 15분봉용 봇1  
-- `TELEGRAM_BOT_TOKEN_2` = 5분봉용 봇2  
-- 두 봇 모두 같은 그룹에 추가하면 `TELEGRAM_CHAT_ID` 하나로 동작합니다.  
-- 봇2를 다른 그룹에 보내려면 `TELEGRAM_CHAT_ID_2`를 설정하세요.
+| 신호 | 설명 |
+|------|------|
+| 🔻 과매도 돌파 | RSI 30 이하로 돌파 |
+| 🔺 과매수 돌파 | RSI 70 이상으로 돌파 |
+| 📈 HMA 200 상단 돌파 | 가격이 HMA 200 위로 돌파 |
+| 📉 HMA 200 하단 돌파 | 가격이 HMA 200 아래로 이탈 |

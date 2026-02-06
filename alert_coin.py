@@ -1,6 +1,6 @@
 """
 비트코인/이더리움 RSI·HMA 200 돌파 알림 봇 (Bybit)
-- 5분봉, 15분봉 기준
+- 15분봉, 1시간봉, 4시간봉 기준
 - RSI 30 이하 돌파 → 과매도 구간 알림
 - RSI 70 이상 돌파 → 과매수 구간 알림
 - HMA 200일선 상단/하단 돌파 → 추세 전환 알림
@@ -27,58 +27,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# 모니터링 대상: 비트코인, 이더리움
-TARGET_SYMBOLS = ["BTCUSDT", "ETHUSDT"]
-
-# Bybit interval: 5=5분, 15=15분
-TARGET_INTERVALS = [
-    ("5", "5분봉"),
-    ("15", "15분봉"),
-]
-
-
-def load_config_from_env() -> Dict:
-    """환경변수에서 설정값을 로드합니다."""
-    required_vars = [
-        "CHECK_INTERVAL", "RSI_PERIOD", "RSI_OVERSOLD", "RSI_OVERBOUGHT",
-        "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"
-    ]
-    missing_vars = [var for var in required_vars if not os.getenv(var)]
-    if missing_vars:
-        print("❌ 필수 환경변수가 설정되지 않았습니다:")
-        for var in missing_vars:
-            print(f"   - {var}")
-        print("\n.env 파일을 생성하고 필요한 환경변수를 설정하세요.")
-        sys.exit(1)
-
-    config = {
-        "check_interval": int(os.getenv("CHECK_INTERVAL", "60")),
-        "rsi_period": int(os.getenv("RSI_PERIOD", "14")),
-        "rsi_oversold": float(os.getenv("RSI_OVERSOLD", "30")),
-        "rsi_overbought": float(os.getenv("RSI_OVERBOUGHT", "70")),
-        "category": os.getenv("CATEGORY", "linear"),
-    }
-
-    chat_id = os.getenv("TELEGRAM_CHAT_ID", "").strip()
-    chat_id_2 = os.getenv("TELEGRAM_CHAT_ID_2", "").strip() or chat_id
-
-    # 봇1: 15분봉 전용
-    token_15 = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
-    if token_15 and chat_id:
-        config["telegram_15"] = {"bot_token": token_15, "chat_id": chat_id}
-        logger.info(f"✅ 텔레그램 봇1 (15분봉) 설정 완료")
-
-    # 봇2: 5분봉 전용
-    token_5 = os.getenv("TELEGRAM_BOT_TOKEN_2", "").strip()
-    if token_5 and chat_id_2:
-        config["telegram_5"] = {"bot_token": token_5, "chat_id": chat_id_2}
-        logger.info(f"✅ 텔레그램 봇2 (5분봉) 설정 완료")
-
-    if "telegram_5" not in config and "telegram_15" not in config:
-        logger.warning("⚠️ 텔레그램 설정이 완료되지 않았습니다.")
-
-    return config
-
 
 class BybitAPI:
     """바이비트 API 클래스"""
@@ -87,7 +35,7 @@ class BybitAPI:
 
     @staticmethod
     def get_kline(symbol: str, interval: str, limit: int = 100, category: str = "linear") -> pd.DataFrame:
-        """캔들 데이터 조회 (interval: 5=5분, 15=15분)"""
+        """캔들 데이터 조회 (interval: 15=15분, 60=1시간, 240=4시간)"""
         url = f"{BybitAPI.BASE_URL}/v5/market/kline"
         params = {
             "category": category,
@@ -152,16 +100,14 @@ class RSICrossoverBot:
 
     def __init__(self, config: Dict, telegram_notifiers: Optional[Dict[str, 'TelegramNotifier']] = None):
         self.config = config
-        self.telegram_notifiers = telegram_notifiers or {}  # {"5": notifier, "15": notifier}
-        # 알림 중복 방지: (symbol, interval) -> 마지막 알림 시간
-        self.alert_history: Dict[str, datetime] = {}
+        self.telegram_notifiers = telegram_notifiers or {}
+        # 캔들 하나당 알림 1회: (symbol, interval, candle_timestamp) -> 이미 알림 전송함
+        self.alert_history: Dict[str, bool] = {}
 
-    def _alert_key(self, symbol: str, interval: str, signal_type: Optional[str] = None) -> str:
-        """신호 타입별로 쿨다운 분리 (하방→상방 연속 돌파 시 둘 다 알림)"""
-        base = f"{symbol}_{interval}"
-        if signal_type:
-            return f"{base}_{signal_type}"
-        return base
+    def _alert_key(self, symbol: str, interval: str, candle_datetime) -> str:
+        """캔들 기준 알림 키 (동일 캔들에 대해 알림 1회만)"""
+        ts = str(candle_datetime) if candle_datetime is not None else ""
+        return f"{symbol}_{interval}_{ts}"
 
     def analyze_symbol_interval(self, symbol: str, interval: str, interval_name: str) -> Optional[Dict]:
         """
@@ -239,13 +185,10 @@ class RSICrossoverBot:
             'datetime': latest['timestamp'],
         }
 
-    def check_alert_cooldown(self, symbol: str, interval: str, signal_type: str, cooldown_minutes: int = 15) -> bool:
-        """알림 쿨다운 (신호 타입별로 분리 - 하방/상방 연속 돌파 시 둘 다 알림)"""
-        key = self._alert_key(symbol, interval, signal_type)
-        if key not in self.alert_history:
-            return True
-        elapsed = (datetime.now() - self.alert_history[key]).total_seconds() / 60
-        return elapsed >= cooldown_minutes
+    def already_alerted_for_candle(self, symbol: str, interval: str, candle_datetime) -> bool:
+        """해당 캔들에 대해 이미 알림을 보냈는지 확인 (캔들 하나당 알림 1회)"""
+        key = self._alert_key(symbol, interval, candle_datetime)
+        return key in self.alert_history
 
     def format_telegram_alert(self, result: Dict) -> str:
         """텔레그램용 알림 메시지 (변화율 제외, RSI·HMA 200 상단/하단 포함)"""
@@ -278,22 +221,22 @@ class RSICrossoverBot:
         return "\n".join(lines)
 
     def scan(self) -> List[Dict]:
-        """BTC, ETH의 5분봉·15분봉 스캔"""
+        """설정된 심볼·타임프레임 스캔"""
         logger.info(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] 스캔 시작...")
 
         alerts = []
-        for symbol in TARGET_SYMBOLS:
-            for interval, interval_name in TARGET_INTERVALS:
+        for symbol in self.config["target_symbols"]:
+            for interval, interval_name in self.config["target_intervals"]:
                 try:
                     result = self.analyze_symbol_interval(symbol, interval, interval_name)
-                    if result and self.check_alert_cooldown(symbol, interval, result['signal_type']):
+                    if result and not self.already_alerted_for_candle(symbol, interval, result['datetime']):
                         alerts.append(result)
-                        self.alert_history[self._alert_key(symbol, interval, result['signal_type'])] = datetime.now()
+                        self.alert_history[self._alert_key(symbol, interval, result['datetime'])] = True
 
                         msg = self.format_telegram_alert(result)
                         logger.info(msg)
 
-                        # 봉별 해당 봇으로 전송 (5분봉→봇2, 15분봉→봇1)
+                        # 봉별 해당 봇으로 전송 (15분봉→봇1, 1시간봉→봇3, 4시간봉→봇4)
                         notifier = self.telegram_notifiers.get(result["interval"])
                         if notifier:
                             if notifier.send_message(msg):
@@ -315,15 +258,16 @@ class RSICrossoverBot:
         print("🤖 BTC/ETH RSI·HMA 200 돌파 알림 봇")
         print("=" * 60)
         print("설정:")
-        print(f"  • 대상: {', '.join(TARGET_SYMBOLS)}")
-        print(f"  • 타임프레임: 5분봉, 15분봉")
+        print(f"  • 대상: {', '.join(self.config['target_symbols'])}")
+        print(f"  • 타임프레임: {', '.join(n for _, n in self.config['target_intervals'])}")
         print(f"  • RSI 과매도: {self.config['rsi_oversold']} 이하 돌파")
         print(f"  • RSI 과매수: {self.config['rsi_overbought']} 이상 돌파")
         print(f"  • HMA 200: 상단/하단 돌파")
         print(f"  • 체크 주기: {self.config['check_interval']}초")
         if self.telegram_notifiers:
-            print(f"  • 5분봉 알림: {'봇2' if '5' in self.telegram_notifiers else '미설정'}")
             print(f"  • 15분봉 알림: {'봇1' if '15' in self.telegram_notifiers else '미설정'}")
+            print(f"  • 1시간봉 알림: {'봇3' if '60' in self.telegram_notifiers else '미설정'}")
+            print(f"  • 4시간봉 알림: {'봇4' if '240' in self.telegram_notifiers else '미설정'}")
         print("=" * 60)
 
         if single_scan:
@@ -405,11 +349,104 @@ class TelegramNotifier:
 
 
 if __name__ == "__main__":
-    config = load_config_from_env()
+    # ============================================================
+    # 설정 (여기만 수정하세요)
+    # ============================================================
 
+    # 모니터링할 코인 (Bybit 심볼 형식)
+    TARGET_SYMBOLS = ["BTCUSDT", "ETHUSDT"]
+
+    # 분석할 타임프레임 (Bybit interval: "15"=15분, "60"=1시간, "240"=4시간)
+    TARGET_INTERVALS = [
+        ("15", "15분봉"),
+        ("60", "1시간봉"),
+        ("240", "4시간봉"),
+    ]
+
+    # 체크 주기 (초) - 15분/1시간/4시간봉 기준 60초 권장
+    CHECK_INTERVAL = 60
+
+    # RSI 설정
+    RSI_PERIOD = 14
+    RSI_OVERSOLD = 30   # 이 값 이하 돌파 시 과매도 알림
+    RSI_OVERBOUGHT = 70  # 이 값 이상 돌파 시 과매수 알림
+
+    # 거래소 (linear=USDT 무기한 선물, spot=현물)
+    CATEGORY = "linear"
+
+    # 텔레그램 설정 (봇 토큰은 @BotFather에서 발급)
+    # Chat ID: 그룹에 봇 추가 후 /start 보내고, "auto"로 두면 자동 조회
+    TELEGRAM_BOT_TOKEN = ""      # 봇1: 15분봉 알림용
+    TELEGRAM_BOT_TOKEN_3 = ""    # 봇3: 1시간봉 알림용 (비워두면 비활성화)
+    TELEGRAM_BOT_TOKEN_4 = ""    # 봇4: 4시간봉 알림용 (비워두면 비활성화)
+    TELEGRAM_CHAT_ID = ""        # 그룹 Chat ID (예: -1001234567890) 또는 "auto"
+    TELEGRAM_CHAT_ID_3 = ""      # 봇3용 별도 그룹 (비워두면 TELEGRAM_CHAT_ID 사용)
+    TELEGRAM_CHAT_ID_4 = ""      # 봇4용 별도 그룹 (비워두면 TELEGRAM_CHAT_ID 사용)
+
+    # 단일 스캔 모드 (True: 1회 스캔 후 종료, False: 반복 실행)
+    SINGLE_SCAN = False
+
+    # ============================================================
+    # .env 덮어쓰기 (배포 시 .env에 설정하면 위 값을 덮어씁니다)
+    # ============================================================
+
+    if os.getenv("CHECK_INTERVAL"):
+        CHECK_INTERVAL = int(os.getenv("CHECK_INTERVAL"))
+    if os.getenv("RSI_PERIOD"):
+        RSI_PERIOD = int(os.getenv("RSI_PERIOD"))
+    if os.getenv("RSI_OVERSOLD"):
+        RSI_OVERSOLD = float(os.getenv("RSI_OVERSOLD"))
+    if os.getenv("RSI_OVERBOUGHT"):
+        RSI_OVERBOUGHT = float(os.getenv("RSI_OVERBOUGHT"))
+    if os.getenv("CATEGORY"):
+        CATEGORY = os.getenv("CATEGORY")
+    if os.getenv("TELEGRAM_BOT_TOKEN"):
+        TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
+    if os.getenv("TELEGRAM_BOT_TOKEN_3"):
+        TELEGRAM_BOT_TOKEN_3 = os.getenv("TELEGRAM_BOT_TOKEN_3", "").strip()
+    if os.getenv("TELEGRAM_BOT_TOKEN_4"):
+        TELEGRAM_BOT_TOKEN_4 = os.getenv("TELEGRAM_BOT_TOKEN_4", "").strip()
+    if os.getenv("TELEGRAM_CHAT_ID"):
+        TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "").strip()
+    if os.getenv("TELEGRAM_CHAT_ID_3"):
+        TELEGRAM_CHAT_ID_3 = os.getenv("TELEGRAM_CHAT_ID_3", "").strip() or TELEGRAM_CHAT_ID
+    if os.getenv("TELEGRAM_CHAT_ID_4"):
+        TELEGRAM_CHAT_ID_4 = os.getenv("TELEGRAM_CHAT_ID_4", "").strip() or TELEGRAM_CHAT_ID
+    if os.getenv("SINGLE_SCAN"):
+        SINGLE_SCAN = os.getenv("SINGLE_SCAN", "false").lower() == "true"
+
+    # 텔레그램 설정 병합 (main 또는 .env에서)
+    telegram_cfg = {}
+    chat_id_3 = (TELEGRAM_CHAT_ID_3 or TELEGRAM_CHAT_ID).strip()
+    chat_id_4 = (TELEGRAM_CHAT_ID_4 or TELEGRAM_CHAT_ID).strip()
+    if TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID:
+        telegram_cfg["telegram_15"] = {"bot_token": TELEGRAM_BOT_TOKEN, "chat_id": TELEGRAM_CHAT_ID}
+        logger.info("✅ 텔레그램 봇1 (15분봉) 설정 완료")
+    if TELEGRAM_BOT_TOKEN_3 and chat_id_3:
+        telegram_cfg["telegram_60"] = {"bot_token": TELEGRAM_BOT_TOKEN_3, "chat_id": chat_id_3}
+        logger.info("✅ 텔레그램 봇3 (1시간봉) 설정 완료")
+    if TELEGRAM_BOT_TOKEN_4 and chat_id_4:
+        telegram_cfg["telegram_240"] = {"bot_token": TELEGRAM_BOT_TOKEN_4, "chat_id": chat_id_4}
+        logger.info("✅ 텔레그램 봇4 (4시간봉) 설정 완료")
+    if not telegram_cfg:
+        logger.warning("⚠️ 텔레그램 설정이 없습니다. 위 TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID를 설정하세요.")
+
+    # 전체 설정 병합 (main 설정 + .env 텔레그램)
+    config = {
+        "target_symbols": TARGET_SYMBOLS,
+        "target_intervals": TARGET_INTERVALS,
+        "check_interval": CHECK_INTERVAL,
+        "rsi_period": RSI_PERIOD,
+        "rsi_oversold": RSI_OVERSOLD,
+        "rsi_overbought": RSI_OVERBOUGHT,
+        "category": CATEGORY,
+        **telegram_cfg,
+    }
+
+    # 텔레그램 봇 연결
+    INTERVAL_LABELS = {"15": "15분봉", "60": "1시간봉", "240": "4시간봉"}
     telegram_notifiers: Dict[str, TelegramNotifier] = {}
-
-    for key, interval in [("telegram_5", "5"), ("telegram_15", "15")]:
+    for key, interval in [("telegram_15", "15"), ("telegram_60", "60"), ("telegram_240", "240")]:
         if key not in config:
             continue
         cfg = config[key]
@@ -417,32 +454,29 @@ if __name__ == "__main__":
         chat_id = cfg["chat_id"]
 
         if not chat_id or str(chat_id).lower() == "auto":
-            print(f"🔍 {interval}분봉 봇 Chat ID 자동 검색 중...")
+            label = INTERVAL_LABELS.get(interval, interval)
+            print(f"🔍 {label} 봇 Chat ID 자동 검색 중...")
             found = TelegramNotifier.get_chat_id(bot_token)
             if found:
                 chat_id = found
                 print(f"✅ Chat ID: {chat_id}")
             else:
-                print(f"❌ {interval}분봉 봇 Chat ID를 찾을 수 없습니다.")
+                print(f"❌ {label} 봇 Chat ID를 찾을 수 없습니다.")
                 continue
 
-        label = "5분봉" if interval == "5" else "15분봉"
+        label = INTERVAL_LABELS.get(interval, interval)
         notifier = TelegramNotifier(bot_token=bot_token, chat_id=chat_id, label=label)
         if notifier.test_connection():
             telegram_notifiers[interval] = notifier
-            logger.info(f"✅ {interval}분봉 텔레그램 봇 연결 성공!")
+            logger.info(f"✅ {label} 텔레그램 봇 연결 성공!")
         else:
-            logger.error(f"⚠️ {interval}분봉 텔레그램 봇 연결 실패.")
-            print(f"\n⚠️ {interval}분봉 봇이 그룹에 메시지를 보내지 못했습니다.")
+            logger.error(f"⚠️ {label} 텔레그램 봇 연결 실패.")
+            print(f"\n⚠️ {label} 봇이 그룹에 메시지를 보내지 못했습니다.")
             print(f"   해결: 1) 그룹에 봇 추가  2) 봇에게 /start 전송  3) 봇 토큰 확인\n")
 
-    if "5" not in telegram_notifiers:
-        print("⚠️ 5분봉 알림이 비활성화됨 (봇 연결 실패). 위 오류를 확인하세요.\n")
+    if not telegram_notifiers:
+        print("⚠️ 텔레그램 알림이 비활성화됨 (봇 연결 실패). 위 오류를 확인하세요.\n")
 
+    # 봇 실행
     bot = RSICrossoverBot(config=config, telegram_notifiers=telegram_notifiers)
-    single_scan = os.getenv("SINGLE_SCAN", "false").lower() == "true"
-
-    if single_scan:
-        bot.run(single_scan=True)
-    else:
-        bot.run()
+    bot.run(single_scan=SINGLE_SCAN)
