@@ -320,8 +320,15 @@ class TelegramNotifier:
         return None
 
     def test_connection(self) -> bool:
-        msg = f"🤖 {self.label} 알림 봇이 시작되었습니다!"
-        return self.send_message(msg)
+        """연결 검증 (메시지 전송 없이 getChat으로 확인)"""
+        url = f"{self.base_url}/getChat"
+        try:
+            response = requests.post(url, data={"chat_id": self.chat_id}, timeout=10)
+            result = response.json()
+            return response.status_code == 200 and result.get("ok")
+        except Exception as e:
+            logger.error(f"[{self.label}] 연결 확인 오류: {e}")
+            return False
 
     def send_message(self, text: str) -> bool:
         url = f"{self.base_url}/sendMessage"
