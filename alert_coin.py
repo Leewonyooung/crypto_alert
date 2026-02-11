@@ -14,8 +14,21 @@ import time
 import os
 import sys
 import logging
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from typing import List, Dict, Optional
+
+# 한국시간(KST, UTC+9)
+KST = timezone(timedelta(hours=9))
+
+
+def _to_kst_str(dt) -> str:
+    """datetime/pandas.Timestamp를 한국시간 문자열로 변환 (예: 2025-02-11 15:30:00 KST)"""
+    if hasattr(dt, 'to_pydatetime'):
+        dt = dt.to_pydatetime()
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    kst = dt.astimezone(KST)
+    return kst.strftime('%Y-%m-%d %H:%M:%S KST')
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -205,10 +218,11 @@ class RSICrossoverBot:
         else:
             title = f"🚨 <b>신호 감지: {result['base_coin']} ({result['interval_name']})</b>"
 
+        time_kst = _to_kst_str(result['datetime'])
         lines = [
             title,
             "",
-            f"⏰ 시간: <code>{result['datetime']}</code>",
+            f"⏰ 시간: <code>{time_kst}</code>",
             f"💰 현재가: <code>{result['price']:.2f} USDT</code>",
             "",
             f"📊 RSI: <code>{result['rsi_prev']:.1f} → {result['rsi']:.1f}</code>",
