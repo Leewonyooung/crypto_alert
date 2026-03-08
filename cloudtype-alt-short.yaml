@@ -1,0 +1,20 @@
+# Alt Short 전용 CloudType 설정 (5분봉 RSI > 85 알림)
+# 사용법: 이 파일을 cloudtype.yaml 로 복사해서 배포하거나,
+# CloudType 대시보드에서 "시작 명령"을 python alt_short.py 로 설정
+
+name: crypto-alt-short
+runtime: python
+version: 3.11
+
+build:
+  commands:
+    - pip install -r requirements.txt
+
+start:
+  command: python alt_short.py
+
+env:
+  - TELEGRAM_BOT_TOKEN_ALT_SHORT
+  - TELEGRAM_ALT_SHORT_CHAT_ID
+  - TELEGRAM_ALT_SHORT_TOPIC_ID
+  - ALT_SHORT_INTERVAL_SECONDS

@@ -157,6 +157,54 @@ CloudType 대시보드의 "로그" 섹션에서:
    - CloudType의 무료 플랜으로도 충분히 작동 가능
    - 필요시 유료 플랜으로 업그레이드
 
+## 🚀 Alt Short 전용 배포 (5분봉 RSI > 85 알림)
+
+**alt_short.py**만 CloudType에 배포하려면 아래 중 한 가지 방법을 사용하세요.
+
+### 방법 A: 대시보드에서 시작 명령만 변경
+
+1. 기존처럼 **Git 저장소 연결** 후 프로젝트 생성
+2. **환경 변수**에 아래만 설정 (alt_short용)
+   ```env
+   TELEGRAM_BOT_TOKEN_ALT_SHORT=발급받은_봇_토큰
+   TELEGRAM_ALT_SHORT_CHAT_ID=-1003642012390
+   TELEGRAM_ALT_SHORT_TOPIC_ID=주제ID숫자
+   ALT_SHORT_INTERVAL_SECONDS=10
+   ```
+3. **시작 명령(Start Command)** 을 다음으로 변경  
+   `python alt_short.py`
+4. 배포 실행
+
+### 방법 B: alt_short 전용 설정 파일 사용
+
+1. 리포지토리 루트에 **cloudtype-alt-short.yaml** 이 있음
+2. 배포할 브랜치(예: alt-short)에서 **cloudtype.yaml** 내용을 아래로 교체하거나, CloudType에서 설정 파일을 **cloudtype-alt-short.yaml** 로 지정(지원 시)
+3. 또는 로컬에서 배포 전에 복사:
+   ```bash
+   cp cloudtype-alt-short.yaml cloudtype.yaml
+   git add cloudtype.yaml
+   git commit -m "Use alt_short for CloudType"
+   git push
+   ```
+4. CloudType에서 해당 브랜치로 배포
+
+### Alt Short 환경변수 요약
+
+| 변수 | 필수 | 설명 |
+|------|------|------|
+| `TELEGRAM_BOT_TOKEN_ALT_SHORT` | ✅ | alt-short 전용 봇 토큰 |
+| `TELEGRAM_ALT_SHORT_CHAT_ID` | ✅ | 채널 ID (또는 TELEGRAM_CHAT_ID 사용) |
+| `TELEGRAM_ALT_SHORT_TOPIC_ID` | 선택 | 주제(Topic) ID. 비우면 채널 일반란으로 전송 |
+| `ALT_SHORT_INTERVAL_SECONDS` | 선택 | 스캔 반복 주기(초). 기본 300(5분), 예: 10 |
+
+### alert_coin과 alt_short 둘 다 쓰는 경우
+
+- **서비스 2개**를 만듦 (같은 리포지토리 연결 가능)
+  - 서비스 1: 시작 명령 `python alert_coin.py`, alert_coin용 환경변수
+  - 서비스 2: 시작 명령 `python alt_short.py`, 위 alt_short용 환경변수
+
+---
+
 ## 📝 참고사항
 
 - CloudType은 24/7 서비스를 제공하므로 봇이 계속 실행됩니다
