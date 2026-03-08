@@ -19,8 +19,8 @@ load_dotenv()
 # 스캔 설정
 TIMEFRAME = "5m"
 RSI_PERIOD = 14
-RSI_THRESHOLD = 85
-MIN_VOLUME_USDT = 3_000_000   # 24h 거래량 3M USDT 이상
+RSI_THRESHOLD = 80
+MIN_VOLUME_USDT = 2_000_000   # 24h 거래량 3M USDT 이상
 OHLCV_LIMIT = 50
 # Bybit: 600 req/5초(IP당). 스캔당 load_markets(1) + fetch_tickers(1) + N×fetch_ohlcv → 0.01~0.02초 권장
 SLEEP_BETWEEN_SYMBOLS = 0.2    # 최소 ~0.01(공격적) ~ 0.05(안전). 0.01이면 스캔당 약 2~5초
