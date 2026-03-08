@@ -125,3 +125,55 @@ python alert_coin.py
 | 🔺 과매수 돌파 | RSI 70 이상으로 돌파 |
 | 📈 HMA 200 상단 돌파 | 가격이 HMA 200 위로 돌파 |
 | 📉 HMA 200 하단 돌파 | 가격이 HMA 200 아래로 이탈 |
+
+---
+
+## 6. 특정 주제(Topic)로 알림 보내기 (alt_short.py)
+
+그룹에서 **주제(Topics)**를 사용하는 경우, 특정 주제(토픽)에만 알림을 보내도록 할 수 있습니다.  
+예: 같은 채널 `-1003642012390` 안에 "Alt Short" 주제를 만들고, alt-short 봇은 그 주제에만 메시지를 보냅니다.
+
+### 구조
+
+| 항목 | 설명 |
+|------|------|
+| **채널 ID** | 기존과 동일 (`TELEGRAM_CHAT_ID` 또는 `TELEGRAM_ALT_SHORT_CHAT_ID`) |
+| **주제 ID** | 해당 주제(토픽)의 스레드 ID. **숫자 하나**로 지정 |
+| **봇** | alt-short 전용 봇 토큰 (`TELEGRAM_BOT_TOKEN_ALT_SHORT`) |
+
+텔레그램 API에서 **`message_thread_id`** 파라미터로 주제를 지정합니다.  
+`alt_short.py`는 이 값을 읽어 해당 주제로만 메시지를 보냅니다.
+
+### 설정 순서
+
+1. **새 봇 생성**  
+   @BotFather에서 `/newbot`으로 alt-short 전용 봇을 만든 뒤, 발급받은 토큰을 `TELEGRAM_BOT_TOKEN_ALT_SHORT`에 넣습니다.
+
+2. **채널에 봇 추가**  
+   알림을 받을 채널(그룹)에 봇을 추가합니다. (채널 ID 예: `-1003642012390`)
+
+3. **주제(Topic) ID 확인**  
+   - 채널에서 **주제(토픽)**를 사용하도록 설정되어 있어야 합니다.  
+   - 알림을 받을 **해당 주제 안에서** 봇에게 메시지를 보냅니다 (예: `/start` 또는 아무 글).  
+   - 터미널에서 실행:
+     ```bash
+     python get_chat_id.py
+     ```
+   - 출력에 **주제(Topic) ID: 12345** 형태로 숫자가 나오면, 이 값을 `TELEGRAM_ALT_SHORT_TOPIC_ID`에 넣습니다.
+
+4. **.env 설정 예시**
+
+```env
+# alt_short.py: 5분봉 RSI>85 알림 → 특정 주제로 전송
+TELEGRAM_BOT_TOKEN_ALT_SHORT=1234567890:ABC...
+TELEGRAM_ALT_SHORT_CHAT_ID=-1003642012390
+TELEGRAM_ALT_SHORT_TOPIC_ID=12345
+```
+
+- `TELEGRAM_ALT_SHORT_CHAT_ID`를 비우면 `TELEGRAM_CHAT_ID`를 사용합니다.  
+- `TELEGRAM_ALT_SHORT_TOPIC_ID`를 비우면 해당 채널의 **일반 채팅**으로 전송됩니다 (주제 미지정).
+
+### CloudType에서 alt_short 서비스만 띄울 때
+
+- **시작 명령**: `python alt_short.py`  
+- **환경 변수**: 위의 `TELEGRAM_BOT_TOKEN_ALT_SHORT`, `TELEGRAM_ALT_SHORT_CHAT_ID`, `TELEGRAM_ALT_SHORT_TOPIC_ID`를 서비스 환경 변수에 설정합니다.
