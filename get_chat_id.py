@@ -62,13 +62,13 @@ if __name__ == "__main__":
     
     all_groups = {}
     
-    token_alt = os.getenv("TELEGRAM_BOT_TOKEN_ALT_SHORT", "").strip()
+    token_alt = os.getenv("TELEGRAM_BOT_TOKEN_ALT_LONG", "").strip()
     
-    def print_group(g, label):
+    def print_group(g, label, topic_env: str = "TELEGRAM_ALT_SHORT_TOPIC_ID"):
         print(f"[{label}] {g['title']}")
         print(f"      Chat ID: {g['id']}")
         if g.get("message_thread_id") is not None:
-            print(f"      주제(Topic) ID: {g['message_thread_id']}  ← TELEGRAM_ALT_SHORT_TOPIC_ID 로 설정")
+            print(f"      주제(Topic) ID: {g['message_thread_id']}  ← {topic_env} 로 설정")
         print()
     
     if token1:
@@ -86,12 +86,12 @@ if __name__ == "__main__":
                 print_group(g, "봇2")
     
     if token_alt:
-        g_alt = get_group_ids(token_alt, "alt-short 봇")
+        g_alt = get_group_ids(token_alt, "alt-long 봇 (단기 롱 알림)")
         for g in g_alt:
             key = (g["id"], g.get("message_thread_id"))
             if key not in all_groups:
                 all_groups[key] = g
-            print_group(g, "alt-short 봇")
+            print_group(g, "alt-long 봇 (단기 롱 알림)", topic_env="TELEGRAM_ALT_LONG_TOPIC_ID")
     
     if all_groups:
         print("=" * 50)
