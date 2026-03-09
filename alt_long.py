@@ -25,7 +25,7 @@ OHLCV_LIMIT = 50
 # Bybit: 600 req/5초(IP당). 스캔당 load_markets(1) + fetch_tickers(1) + N×fetch_ohlcv → 0.01~0.02초 권장
 SLEEP_BETWEEN_SYMBOLS = 0.2    # 최소 ~0.01(공격적) ~ 0.05(안전). 0.01이면 스캔당 약 2~5초
 # 반복 주기(초). 기본 5분. Bybit 한계 고려 시 최소 5~10초까지 가능 (SLEEP_BETWEEN_SYMBOLS도 줄여야 함)
-INTERVAL_SECONDS = int(os.getenv("ALT_LONG_INTERVAL_SECONDS", "300"))
+INTERVAL_SECONDS = int(os.getenv("ALT_LONG_INTERVAL_SECONDS", "10"))
 INCLUDE_BTC = False            # False = 알트만
 
 
